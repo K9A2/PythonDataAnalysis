@@ -1,14 +1,13 @@
 # coding=utf-8
 # filename: JSONDecoder.py
 
-"""
-This file includes the procedure to process the data from iperf3 with single thread, i.e. "iperf3 -c hostname
-[-i time]" and draws a LINE CHART for it.
-"""
-
-import matplotlib.pyplot as plt
+'''
+This file includes the procedure to process the data from iperf3 with single
+thread, i.e. "iperf3 -c hostname [-i time]" and draws a LINE CHART for it.
+'''
 import json
 import re
+import matplotlib.pyplot as plt
 
 import Statistics
 
@@ -27,62 +26,178 @@ def read_text_file(file_name):
     return lines
 
 
-def get_source_ready(document):
+def get_result_dictionary(intervals, keys):
     """
-    Prepare all data in list for plotting
+    Get results in a dictionary accessed by different socket keys.
 
-    :param document:            Data text in list, line by line
+    :param intervals:   Test intervals in list
+    :param keys:        Socket keys in list
+
+    :return:            Result in dictionary
     """
-    for j in range(len(document)):
-        line = document[j]
-        bandwidth.append(line[4])
-        retr.append(line[6])
-        cwnd.append(line[7])
+    result = {}
+
+    #   Create entries in dictionary for all flows
+    for i in range(len(keys)):
+        flow_table = {}
+        rtt_list = []
+        snd_cwnd_list = []
+        bits_per_second_list = []
+        retransmits_list = []
+        flow_table["rtt"] = rtt_list
+        flow_table["snd_cwnd"] = snd_cwnd_list
+        flow_table["bits_per_second"] = bits_per_second_list
+        flow_table["retransmits"] = retransmits_list
+        #   Add entry
+        result[keys[i]] = flow_table
+
+    #   Load data for each flow
+    for i in range(0, 70000):
+        for j in range(len(intervals[i]['streams'])):
+            ID = intervals[i]['streams'][j]['socket']
+            #   Convert rtt from us to ms
+            result[ID]["rtt"].append(intervals[i]['streams'][j]['rtt'] / 1000)
+            #   Convert from bit to Kbits
+            result[ID]["snd_cwnd"].append(
+                intervals[i]['streams'][j]['snd_cwnd'] / 1024)
+            #   Convert from bit to Mbit
+            result[ID]["bits_per_second"].append(
+                intervals[i]['streams'][j]['bits_per_second'] / (1024 * 1024))
+            result[ID]["retransmits"].append(
+                intervals[i]['streams'][j]['retransmits'])
+
+    return result
 
 
-doc = read_text_file("./json.log")
+def get_socket_keys(intervals):
+    """
+    Get socket IDs for keys used in result dictionary.
 
-docstring = re.sub("[\n|\t]", "", "".join(doc))
+    :param intervals:   Intervals form JSON Object in list
 
-results = json.loads("".join(doc))
+    :return:            Socket IDs in list
+    """
+    socket_keys = []
 
-intervals = results["intervals"]
+    for i in range(len(intervals[0]["streams"])):
+        socket_keys.append(intervals[0]["streams"][i]["socket"])
 
-for i in range(len(intervals)):
-    print intervals[i]["streams"][0]["rtt"]
+    return socket_keys
 
-retr = []
-bandwidth = []
-cwnd = []
 
-get_source_ready(doc)
+def draw_charts(result, socket_keys):
+    """
+    Draw line charts for rtt, snd_cwnd, bits_per_second and retransmits.
 
-stat = Statistics.Stats(bandwidth)
+    :param  result:         Result in dict
+    :param  socket_keys:    Socket IDs in list
+    """
+    colors = ["#fd6126", "#029ED9", "#81FF38", "#FF7438", "#FF4238", "#A3159A"]
+    size = 2.0
+    #   Get the lengthe of Y stick
+    y = []
+    for i in range(len(result[socket_keys[0]]['rtt'])):
+        y.append(i)
 
-print "Max bandwidth:"
-print stat.max(), "Mbit/sec"
+    #   Draw N lines in the same chart
+    plt.subplot(2, 2, 1)
+    plt.title("Bits per second")
+    plt.ylabel("Bandwidth(Mbits/sec)")
+    for i in range(len(socket_keys)):
+        plt.plot(y, result[socket_keys[i]]['bits_per_second'],
+                 colors[i], label=socket_keys[i], linewidth=size)
 
-'''
-Print the chart with code below.
-'''
-y = []
+    plt.subplot(2, 2, 2)
+    plt.title("Retransmitted packet number")
+    plt.ylabel("Packets number")
+    for i in range(len(socket_keys)):
+        plt.plot(y, result[socket_keys[i]]['retransmits'],
+                 colors[i], label=socket_keys[i], linewidth=size)
+                 
+    plt.subplot(2, 2, 3)
+    plt.title("Congestion window size")
+    plt.ylabel("Size(KB)")
+    for i in range(len(socket_keys)):
+        plt.plot(y, result[socket_keys[i]]['snd_cwnd'],
+                 colors[i], label=socket_keys[i], linewidth=size)
 
-for i in range(len(bandwidth)):
-    y.append(i)
+    plt.subplot(2, 2, 4)
+    plt.title("RTT")
+    plt.ylabel("ms")
+    for i in range(len(socket_keys)):
+        plt.plot(y, result[socket_keys[i]]['rtt'],
+                 colors[i], label=socket_keys[i], linewidth=size)
 
-plt.subplot(311)
-plt.title("Bandwidth in 24h")
-plt.ylabel("Bandwidth(Mbit/sec)")
-plt.plot(y, bandwidth, 'grey', label='bandwidth', linewidth=2.0)
+    plt.show()
 
-plt.subplot(312)
-plt.title("Retransmitted packet number in 24h")
-plt.ylabel("Packets number")
-plt.plot(y, retr, 'red', label='retransmission', linewidth=2.0)
 
-plt.subplot(313)
-plt.title("Congestion window size in 24h")
-plt.ylabel("Size(KB)")
-plt.plot(y, cwnd, 'blue', label='cwnd', linewidth=2.0)
+def get_statistics(result, socket_keys):
+    """
+    Print statistics for given result.
 
-plt.show()
+    :param result:      Result in dict
+    :param socket_keys: Socket IDs in list
+    """
+
+    '''
+    Get min, max, median and variance for RTT, bandwidth, Retransmission
+    Ratio and BDP for all streams
+    '''
+
+    # Print table header
+    print "             Max     Min     Median      Variances"
+    print "Parameters"
+
+    # RTT
+    print "RTT"
+    for i in range(len(socket_keys)):
+        print Statistics.Stats.max(result[socket_keys[i]]["rtt"])
+
+    # Bandwidth
+    # Retransmission Ratio
+    # BDP
+
+
+def parse_arguments():
+    """
+    Parse arguments from command line input. Empty now.
+    """
+    print "Hello world"
+
+
+def print_usage():
+    """
+    Print usage when user input wrong arguments. Empty now.
+    """
+    print "Hello world"
+
+
+def main():
+    """
+    Main Function, nothing to comment
+    """
+    #   Load and parse json object from file with specific
+    file_name = "./benchmark.log"
+    doc = re.sub("[\n|\t]", "", "".join(read_text_file(file_name)))
+    json_object = json.loads("".join(doc))
+
+    #   Important JSON objects
+    intervals = json_object["intervals"]
+    start = json_object["start"]
+    end = json_object["end"]
+
+    #   Socket IDs to get data from result dictionary
+    socket_keys = get_socket_keys(intervals)
+
+    result = get_result_dictionary(intervals, socket_keys)
+
+    get_statistics(result, socket_keys)
+
+    draw_charts(result, socket_keys)
+
+    return 0
+
+
+#   Function Main
+if __name__ == '__main__':
+    main()
