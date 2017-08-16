@@ -6,8 +6,6 @@ This file includes the procedure to process the data from iperf3 with single
 thread, i.e. "iperf3 -c hostname [-i time]" and draws a LINE CHART for it.
 """
 import json
-import re
-import matplotlib.pyplot as plt
 import numpy
 
 
@@ -84,52 +82,6 @@ def get_socket_keys(intervals):
     return socket_keys
 
 
-def draw_charts(result, socket_keys):
-    """
-    Draw line charts for rtt, snd_cwnd, bits_per_second and retransmits.
-
-    :param  result:         Result in dict
-    :param  socket_keys:    Socket IDs in list
-    """
-    colors = ["#fd6126", "#029ED9", "#81FF38", "#FF7438", "#FF4238", "#A3159A"]
-    size = 2.0
-    #   Get the lengthe of Y stick
-    y = []
-    for i in range(len(result[socket_keys[0]]['rtt'])):
-        y.append(i)
-
-    # Draw N lines in the same chart
-    plt.subplot(2, 2, 1)
-    plt.title("Bits per second")
-    plt.ylabel("Bandwidth(Mbits/sec)")
-    for i in range(len(socket_keys)):
-        plt.plot(y, result[socket_keys[i]]['bits_per_second'],
-                 colors[i], label=socket_keys[i], linewidth=size)
-
-    plt.subplot(2, 2, 2)
-    plt.title("Retransmitted packet number")
-    plt.ylabel("Packets number")
-    for i in range(len(socket_keys)):
-        plt.plot(y, result[socket_keys[i]]['retransmits'],
-                 colors[i], label=socket_keys[i], linewidth=size)
-
-    plt.subplot(2, 2, 3)
-    plt.title("Congestion window size")
-    plt.ylabel("Size(KB)")
-    for i in range(len(socket_keys)):
-        plt.plot(y, result[socket_keys[i]]['snd_cwnd'],
-                 colors[i], label=socket_keys[i], linewidth=size)
-
-    plt.subplot(2, 2, 4)
-    plt.title("RTT")
-    plt.ylabel("ms")
-    for i in range(len(socket_keys)):
-        plt.plot(y, result[socket_keys[i]]['rtt'],
-                 colors[i], label=socket_keys[i], linewidth=size)
-
-    plt.show()
-
-
 def get_statistics(result, socket_keys):
     """
     Print statistics for given result.
@@ -162,7 +114,8 @@ def get_statistics(result, socket_keys):
         bandwidth = result[socket_keys[i]]["bits_per_second"]
         print (
             "[%-2d]   %-10.2f%-10.2f%-10.2f%-10.2f%-10.2f" % (
-                socket_keys[i], numpy.max(bandwidth), numpy.min(bandwidth), numpy.average(bandwidth), numpy.median(bandwidth), numpy.var(bandwidth)))
+                socket_keys[i], numpy.max(bandwidth), numpy.min(bandwidth), numpy.average(bandwidth),
+                numpy.median(bandwidth), numpy.var(bandwidth)))
 
     # Retransmission Ratio
     print "--------------------------------------------------------"
@@ -171,7 +124,8 @@ def get_statistics(result, socket_keys):
         retr = result[socket_keys[i]]["retransmits"]
         print (
             "[%-2d]   %-10.2f%-10.2f%-10.2f%-10.2f%-10.2f" % (
-                socket_keys[i], numpy.max(retr), numpy.min(retr), numpy.average(retr), numpy.median(retr), numpy.var(retr)))
+                socket_keys[i], numpy.max(retr), numpy.min(retr), numpy.average(retr), numpy.median(retr),
+                numpy.var(retr)))
 
     # BDP
     print "--------------------------------------------------------"
@@ -185,42 +139,86 @@ def get_statistics(result, socket_keys):
         print ("[%-2d]   %-10.3f" % (socket_keys[i], min_rtt * max_bandwidth))
 
 
-def parse_arguments():
-    """
-    Parse arguments from command line input. Empty now.
-    """
-    print "Hello world"
-
-
-def print_usage():
-    """
-    Print usage when user input wrong arguments. Empty now.
-    """
-    print "Hello world"
-
-
 def main():
     """
     Main Function, nothing to comment
     """
+
+    algorithms = ["bbr", "scalable", "bic", "cubic", "highspeed", "htcp", "hybla", "illinois", "vegas", "yeah", "reno"]
+    file_path = "./LabRecord/result/true_topo/dc1_to_lan/test_0/round_3/"
+
     #   Load and parse json object from file with specific
-    file_name = "./LabRecord/result/true_topo/dc1_to_lan/test_0/round_1/bbr.log"
-    doc = re.sub("[\n|\t]", "", "".join(read_text_file(file_name)))
-    json_object = json.loads("".join(doc))
+    json_object = {}
+    for i in range(0, len(algorithms)):
+        json_object[algorithms[i]] = json.loads("".join(read_text_file(file_path + algorithms[i] + ".log")))
 
-    #   Important JSON objects
-    intervals = json_object["intervals"]
-    start = json_object["start"]
-    end = json_object["end"]
+    # Print result tables
+    print "||Algorithm|Max|Min|Median|Average|Var|"
+    print "|-|--|---|------|-------|---|--|"
 
-    #   Socket IDs to get data from result dictionary
-    socket_keys = get_socket_keys(intervals)
+    result = {}
 
-    result = get_result_dictionary(intervals, socket_keys)
+    for i in range(len(algorithms)):
+        intervals = json_object[algorithms[i]]["intervals"]
+        rtt = []
+        snd_cwnd = []
+        bits_per_second = []
+        retransmits = []
+        flow_table = {}
+        for j in range(len(intervals)):
+            # Convert to ms
+            rtt.append(intervals[j]["streams"][0]["rtt"] / 1000.0)
+            snd_cwnd.append(intervals[j]["streams"][0]["snd_cwnd"] / 1024.0)
+            bits_per_second.append(intervals[j]["streams"][0]["bits_per_second"] / (1024.0 * 1024.0))
+            retransmits.append(intervals[j]["streams"][0]["retransmits"])
 
-    get_statistics(result, socket_keys)
+        flow_table["rtt"] = rtt
+        flow_table["bits_per_second"] = bits_per_second
+        flow_table["retransmits"] = retransmits
+        flow_table["snd_cwnd"] = snd_cwnd
+        result[algorithms[i]] = flow_table
 
-    draw_charts(result, socket_keys)
+    # Print RTT
+    for i in range(len(algorithms)):
+        line = result[algorithms[i]]["rtt"]
+        if i == 0:
+            print "|RTT(ms)|%s|%.2f|%.2f|%.2f|%.2f|%.2f|" % (algorithms[i], numpy.max(line), numpy.min(line),
+                                                             numpy.average(line), numpy.median(line), numpy.var(line))
+        else:
+            print "||%s|%.2f|%.2f|%.2f|%.2f|%.2f|" % (algorithms[i], numpy.max(line), numpy.min(line),
+                                                      numpy.average(line), numpy.median(line), numpy.var(line))
+
+    # Print Bandwidth
+    for i in range(len(algorithms)):
+        line = result[algorithms[i]]["bits_per_second"]
+        if i == 0:
+            print "|Bandwidth(Mbit/s)|%s|%.2f|%.2f|%.2f|%.2f|%.2f|" % (algorithms[i], numpy.max(line), numpy.min(line),
+                                                                       numpy.average(line), numpy.median(line),
+                                                                       numpy.var(line))
+        else:
+            print "||%s|%.2f|%.2f|%.2f|%.2f|%.2f|" % (algorithms[i], numpy.max(line), numpy.min(line),
+                                                      numpy.average(line), numpy.median(line), numpy.var(line))
+
+    # Print Retransmission Packet
+    for i in range(len(algorithms)):
+        line = result[algorithms[i]]["retransmits"]
+        if i == 0:
+            print "|Retransmission Packet	|%s|%.2f|%.2f|%.2f|%.2f|%.2f|" % (
+                algorithms[i], numpy.max(line), numpy.min(line),
+                numpy.average(line), numpy.median(line),
+                numpy.var(line))
+        else:
+            print "||%s|%.2f|%.2f|%.2f|%.2f|%.2f|" % (algorithms[i], numpy.max(line), numpy.min(line),
+                                                      numpy.average(line), numpy.median(line), numpy.var(line))
+
+    # Print BDP
+    for i in range(len(algorithms)):
+        rtt = result[algorithms[i]]["rtt"]
+        bit = result[algorithms[i]]["bits_per_second"]
+        if i == 0:
+            print "|BDP(Kbit)|%s|%5.2f|" % (algorithms[i], numpy.max(bit) * numpy.min(rtt))
+        else:
+            print "||%s|%5.2f|" % (algorithms[i], numpy.max(bit) * numpy.min(rtt))
 
     return 0
 
