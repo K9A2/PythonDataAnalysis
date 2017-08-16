@@ -1,13 +1,14 @@
 # coding=utf-8
 # filename: JSONDecoder.py
 
-'''
+"""
 This file includes the procedure to process the data from iperf3 with single
 thread, i.e. "iperf3 -c hostname [-i time]" and draws a LINE CHART for it.
-'''
+"""
 import json
 import re
 import matplotlib.pyplot as plt
+import numpy
 
 import Statistics
 
@@ -51,12 +52,12 @@ def get_result_dictionary(intervals, keys):
         #   Add entry
         result[keys[i]] = flow_table
 
-    #   Load data for each flow
-    for i in range(0, 70000):
+    # Load data for each flow
+    for i in range(0, len(intervals)):
         for j in range(len(intervals[i]['streams'])):
             ID = intervals[i]['streams'][j]['socket']
             #   Convert rtt from us to ms
-            result[ID]["rtt"].append(intervals[i]['streams'][j]['rtt'] / 1000)
+            result[ID]["rtt"].append(intervals[i]['streams'][j]['rtt'] / 1000.0)
             #   Convert from bit to Kbits
             result[ID]["snd_cwnd"].append(
                 intervals[i]['streams'][j]['snd_cwnd'] / 1024)
@@ -99,7 +100,7 @@ def draw_charts(result, socket_keys):
     for i in range(len(result[socket_keys[0]]['rtt'])):
         y.append(i)
 
-    #   Draw N lines in the same chart
+    # Draw N lines in the same chart
     plt.subplot(2, 2, 1)
     plt.title("Bits per second")
     plt.ylabel("Bandwidth(Mbits/sec)")
@@ -113,7 +114,7 @@ def draw_charts(result, socket_keys):
     for i in range(len(socket_keys)):
         plt.plot(y, result[socket_keys[i]]['retransmits'],
                  colors[i], label=socket_keys[i], linewidth=size)
-                 
+
     plt.subplot(2, 2, 3)
     plt.title("Congestion window size")
     plt.ylabel("Size(KB)")
@@ -145,17 +146,53 @@ def get_statistics(result, socket_keys):
     '''
 
     # Print table header
-    print "             Max     Min     Median      Variances"
-    print "Parameters"
+    print "ID     Max       Min       Median    Average   Variances"
 
     # RTT
-    print "RTT"
+    print "--------------------------------------------------------"
+    print "RTT(ms)"
     for i in range(len(socket_keys)):
-        print Statistics.Stats.max(result[socket_keys[i]]["rtt"])
+        rtt = result[socket_keys[i]]["rtt"]
+        print (
+            "[%-2d]   %-10.2f%-10.2f%-10.2f%-10.2f%-10.2f" % (
+                socket_keys[i], numpy.max(rtt), numpy.min(rtt), numpy.average(rtt), numpy.median(rtt), numpy.var(rtt)))
 
     # Bandwidth
+    print "--------------------------------------------------------"
+    print "Bandwidth(Mbit/s)"
+    for i in range(len(socket_keys)):
+        bandwidth = result[socket_keys[i]]["bits_per_second"]
+        print (
+            "[%-2d]   %-10.2f%-10.2f%-10.2f%-10.2f%-10.2f" % (
+                socket_keys[i], numpy.max(bandwidth), numpy.min(bandwidth), numpy.average(bandwidth), numpy.median(bandwidth), numpy.var(bandwidth)))
+
     # Retransmission Ratio
+    print "Retransmission(packet)"
+    print "--------------------------------------------------------"
+    for i in range(len(socket_keys)):
+        retr = result[socket_keys[i]]["retransmits"]
+        print (
+            "[%-2d]   %-10.2f%-10.2f%-10.2f%-10.2f%-10.2f" % (
+                socket_keys[i], numpy.max(retr), numpy.min(retr), numpy.average(retr), numpy.median(retr), numpy.var(retr)))
+
     # BDP
+    print "BDP(Mbit)"
+    print "--------------------------------------------------------"
+    for i in range(len(socket_keys)):
+        rtt = result[socket_keys[i]]["rtt"]
+        min_rtt = numpy.min(rtt)
+        max_rtt = numpy.max(rtt)
+        avg_rtt = numpy.average(rtt)
+        mean_rtt = numpy.mean(rtt)
+
+        bandwidth = result[socket_keys[i]]["bits_per_second"]
+        min_bandwidth = numpy.min(bandwidth)
+        max_bandwidth = numpy.max(bandwidth)
+        avg_bandwidth = numpy.average(bandwidth)
+        mean_bandwidth = numpy.mean(bandwidth)
+        print (
+            "[%-2d]   %-10.2f%-10.2f%-10.2f%-10.2f" % (
+                socket_keys[i], (max_rtt / 2) * max_bandwidth, (min_rtt / 2) * min_bandwidth, (avg_rtt / 2) * avg_bandwidth, (mean_rtt / 2) * mean_bandwidth))
 
 
 def parse_arguments():
@@ -177,7 +214,7 @@ def main():
     Main Function, nothing to comment
     """
     #   Load and parse json object from file with specific
-    file_name = "./benchmark.log"
+    file_name = "./LabRecord/result/true_topo/dc1_to_lan/test_0/round_0/highspeed.log"
     doc = re.sub("[\n|\t]", "", "".join(read_text_file(file_name)))
     json_object = json.loads("".join(doc))
 
